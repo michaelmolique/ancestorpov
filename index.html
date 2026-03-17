@@ -547,7 +547,6 @@ async function submitClip(scene) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        input: {
           prompt: scene.videoPrompt,
           duration: '10',
           aspect_ratio: '9:16',
