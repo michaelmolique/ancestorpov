@@ -163,34 +163,66 @@
   <div class="view active" id="view-input">
     <div class="card">
       <div class="card-title">New Video</div>
-      <div class="field">
-        <label>Topic</label>
-        <textarea id="topic" rows="2" placeholder="e.g. Your ancestor discovers fire for the first time…"></textarea>
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button class="btn btn-primary" id="tab-paste-btn" onclick="switchTab('paste')" style="font-size:12px;padding:7px 14px;">Paste JSON from Claude</button>
+        <button class="btn btn-ghost" id="tab-info-btn" onclick="switchTab('info')" style="font-size:12px;padding:7px 14px;">How to generate ↗</button>
       </div>
-      <div class="field">
-        <label>Era</label>
-        <select id="era">
-          <option>Prehistoric (200,000 BC)</option>
-          <option>Neolithic / Stone Age (8,000 BC)</option>
-          <option>Ancient Mesopotamia (3,000 BC)</option>
-          <option>Ancient Egypt (2,500 BC)</option>
-          <option>Ancient China (2,000 BC)</option>
-          <option>Ancient Greece (400 BC)</option>
-          <option>Ancient Rome (100 AD)</option>
-          <option>Vikings (900 AD)</option>
-          <option>Medieval Europe (1,200 AD)</option>
-          <option>Aztec Empire (1,400 AD)</option>
-        </select>
+
+      <!-- PASTE TAB -->
+      <div id="tab-paste">
+        <div class="field">
+          <label>Paste JSON from Claude chat</label>
+          <textarea id="json-input" rows="10" placeholder='Paste the JSON Claude generated here…' style="font-family:monospace;font-size:11px;"></textarea>
+        </div>
+        <div class="row">
+          <button class="btn btn-primary" onclick="loadFromJSON()">Load Script → Review ↗</button>
+        </div>
+        <div id="json-err" style="color:var(--red);font-size:12px;margin-top:8px;display:none;"></div>
       </div>
-      <div class="field">
-        <label>Mode</label>
-        <select id="mode">
-          <option value="test">Test — 3 clips · ~30s · ~$0.87</option>
-          <option value="full" selected>Full — 7 clips · ~70s · ~$2.03</option>
-        </select>
-      </div>
-      <div class="row">
-        <button class="btn btn-primary" id="gen-btn" onclick="generateScript()">Generate Script ↗</button>
+
+      <!-- INFO TAB -->
+      <div id="tab-info" style="display:none;">
+        <div style="font-size:13px;line-height:1.8;color:var(--dim);">
+          <p style="margin-bottom:12px;">The script is generated free using Claude in the chat. Here's how:</p>
+          <div style="background:var(--surface2);border-radius:8px;padding:14px;margin-bottom:12px;">
+            <div style="color:var(--gold);font-size:11px;letter-spacing:.08em;margin-bottom:8px;">STEP 1 — Fill in your topic</div>
+            <div class="field" style="margin-bottom:10px;">
+              <label>Topic</label>
+              <textarea id="topic" rows="2" placeholder="e.g. Your ancestor discovers fire for the first time…"></textarea>
+            </div>
+            <div class="field" style="margin-bottom:10px;">
+              <label>Era</label>
+              <select id="era">
+                <option>Prehistoric (200,000 BC)</option>
+                <option>Neolithic / Stone Age (8,000 BC)</option>
+                <option>Ancient Mesopotamia (3,000 BC)</option>
+                <option>Ancient Egypt (2,500 BC)</option>
+                <option>Ancient China (2,000 BC)</option>
+                <option>Ancient Greece (400 BC)</option>
+                <option>Ancient Rome (100 AD)</option>
+                <option>Vikings (900 AD)</option>
+                <option>Medieval Europe (1,200 AD)</option>
+                <option>Aztec Empire (1,400 AD)</option>
+              </select>
+            </div>
+            <div class="field" style="margin-bottom:10px;">
+              <label>Mode</label>
+              <select id="mode">
+                <option value="test">Test — 3 clips · ~30s · ~$0.87</option>
+                <option value="full" selected>Full — 7 clips · ~70s · ~$2.03</option>
+              </select>
+            </div>
+          </div>
+          <div style="background:var(--surface2);border-radius:8px;padding:14px;margin-bottom:12px;">
+            <div style="color:var(--gold);font-size:11px;letter-spacing:.08em;margin-bottom:8px;">STEP 2 — Copy this prompt</div>
+            <button class="btn btn-primary" onclick="copyPrompt()" style="font-size:12px;padding:7px 14px;">Copy prompt for Claude ↗</button>
+            <div id="copy-confirm" style="display:none;color:var(--green);font-size:12px;margin-top:8px;">✓ Copied! Paste into Claude chat → copy the JSON response → come back and use Paste JSON tab.</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:8px;padding:14px;">
+            <div style="color:var(--gold);font-size:11px;letter-spacing:.08em;margin-bottom:6px;">STEP 3 — Paste JSON</div>
+            <div style="font-size:12px;">Come back to the <strong style="color:var(--text);">Paste JSON</strong> tab and paste the response.</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -336,7 +368,7 @@ function saveSettings() {
 
 // ─── CLAUDE API ───────────────────────────────────────────────────────────────
 async function callClaude(system, user) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch(`${S.workerUrl}/claude`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system, messages: [{ role: 'user', content: user }] })
@@ -346,33 +378,38 @@ async function callClaude(system, user) {
   return data.content[0].text;
 }
 
-// ─── STEP 1: GENERATE SCRIPT ─────────────────────────────────────────────────
-async function generateScript() {
-  const topic = document.getElementById('topic').value.trim();
-  if (!topic) { setStatus('err', 'Enter a topic first.'); return; }
-  const era = document.getElementById('era').value;
-  const mode = document.getElementById('mode').value;
-  const sceneCount = mode === 'test' ? 3 : 7;
-  const btn = document.getElementById('gen-btn');
-  btn.disabled = true;
-  setStatus('run', '⟳ Generating script and scene prompts…');
+// ─── TAB SWITCHER ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('tab-paste').style.display = tab === 'paste' ? 'block' : 'none';
+  document.getElementById('tab-info').style.display = tab === 'info' ? 'block' : 'none';
+  document.getElementById('tab-paste-btn').className = tab === 'paste' ? 'btn btn-primary' : 'btn btn-ghost';
+  document.getElementById('tab-info-btn').className = tab === 'info' ? 'btn btn-primary' : 'btn btn-ghost';
+  document.getElementById('tab-paste-btn').style.fontSize = '12px';
+  document.getElementById('tab-paste-btn').style.padding = '7px 14px';
+  document.getElementById('tab-info-btn').style.fontSize = '12px';
+  document.getElementById('tab-info-btn').style.padding = '7px 14px';
+}
 
-  try {
-    const raw = await callClaude(
-      `You are an expert short-form video producer for AncestorPOV — a TikTok/YouTube Shorts channel making AI-generated historical POV videos. Every video is personal, immersive, mysterious. NO spoken dialogue — audio is ambient only (fire, wind, stone, grunts, crowds). Return ONLY valid JSON, no markdown.`,
-      `Create an AncestorPOV video package.
+function copyPrompt() {
+  const topic = document.getElementById('topic')?.value.trim() || 'Your ancestor discovers fire';
+  const era = document.getElementById('era')?.value || 'Prehistoric (200,000 BC)';
+  const mode = document.getElementById('mode')?.value || 'full';
+  const sceneCount = mode === 'test' ? 3 : 7;
+
+  const prompt = `Create an AncestorPOV video package. Return ONLY valid JSON, no markdown.
+
 Topic: "${topic}" | Era: ${era} | Scenes: ${sceneCount} × 10 seconds
 
 Rules:
 - Title starts with "Your ancestor"
 - Narration: calm BBC documentary narrator, second-person ("Your ancestor grips the flint"), ${sceneCount===3?'60-80':'150-180'} words, opens with one punchy scroll-stopping sentence, includes one real historical fact, ends with personal question like "Can you feel it in your blood?"
 - Each scene videoPrompt: 90-120 words, first-person POV, 9:16 vertical, 4K photorealistic cinematic, ultra-specific lighting/texture/atmosphere, period-accurate, camera direction. NO dialogue or speech.
-- Each scene soundPrompt: describe ONLY ambient sounds (no speech/dialogue) — e.g. "stone scraping stone, heavy breathing, wind through cave, distant animal calls"
-- Each scene caption: 1-2 short punchy lines (max 8 words each) for burned-in text overlay
-- Caption (post): starts with "POV: Your ancestor…", 3-4 lines, ends with question
+- Each scene soundPrompt: ONLY ambient sounds (no speech) — e.g. "stone scraping stone, heavy breathing, wind through cave"
+- Each scene caption: 1-2 short punchy lines (max 8 words each) for burned-in captions
+- postCaption: starts with "POV: Your ancestor…", 3-4 lines, ends with question
 - 16 hashtags including #AncestorPOV #YourAncestor #POV #ancienthistory
 
-Return exact JSON:
+Return this exact JSON:
 {
   "title": "string",
   "narration": "string",
@@ -381,24 +418,37 @@ Return exact JSON:
       "id": 1,
       "label": "string",
       "videoPrompt": "string",
-      "soundPrompt": "string (ambient sounds only, no speech)",
-      "caption": "string (1-2 short lines)"
+      "soundPrompt": "string",
+      "caption": "string"
     }
   ],
   "postCaption": "string",
   "hashtags": "string"
 }
-Exactly ${sceneCount} scenes.`
-    );
+Exactly ${sceneCount} scenes.`;
 
+  navigator.clipboard.writeText(prompt).then(() => {
+    document.getElementById('copy-confirm').style.display = 'block';
+    setTimeout(() => document.getElementById('copy-confirm').style.display = 'none', 8000);
+  });
+}
+
+// ─── LOAD FROM JSON ───────────────────────────────────────────────────────────
+function loadFromJSON() {
+  const raw = document.getElementById('json-input').value.trim();
+  const errEl = document.getElementById('json-err');
+  errEl.style.display = 'none';
+  try {
     const data = JSON.parse(raw.replace(/```json|```/g,'').trim());
-    if (!data.scenes || data.scenes.length === 0) throw new Error('No scenes returned');
+    if (!data.scenes || !Array.isArray(data.scenes) || data.scenes.length === 0) throw new Error('Missing or empty scenes array');
+    if (!data.title) throw new Error('Missing title');
 
-    // Build SRT from scenes (each scene = 10s)
+    const sceneCount = data.scenes.length;
+    const mode = sceneCount <= 3 ? 'test' : 'full';
+
+    // Build SRT
     const srt = data.scenes.map((s, i) => {
-      const start = toSRTTime(i * 10);
-      const end = toSRTTime((i + 1) * 10);
-      return `${i+1}\n${start} --> ${end}\n${s.caption}\n`;
+      return `${i+1}\n${toSRTTime(i*10)} --> ${toSRTTime((i+1)*10)}\n${s.caption || s.label}\n`;
     }).join('\n');
 
     S.current = { ...data, srt, mode, sceneCount };
@@ -409,10 +459,13 @@ Exactly ${sceneCount} scenes.`
     goToStep(1);
     clearStatus();
   } catch(e) {
-    setStatus('err', '✕ ' + e.message.substring(0, 120));
+    errEl.textContent = '✕ ' + e.message;
+    errEl.style.display = 'block';
   }
-  btn.disabled = false;
 }
+
+// ─── STEP 1: GENERATE SCRIPT (unused - kept for future API use) ───────────────
+async function generateScript() {}
 
 function toSRTTime(secs) {
   const h = Math.floor(secs/3600).toString().padStart(2,'0');
